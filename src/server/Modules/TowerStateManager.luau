@@ -75,8 +75,7 @@ function TowerStateManager:UpdateState(newState)
 		end
 
 		while self.state == "attacking" do
-			local randomIndex = math.random(1, #AttackStates)
-			local randomAttack = AttackStates[randomIndex]
+			local randomAttack = AttackStates[math.random(1, #AttackStates)]
 
 			if self.AttackState == randomAttack then
 				continue
@@ -91,9 +90,7 @@ function TowerStateManager:UpdateState(newState)
 			end
 
 			if self.emitter.Position ~= self.tower.EmitterAlignmentPart.Position then
-				local goal = {}
-				goal.Position = self.tower.EmitterAlignmentPart.Position
-
+				local goal = { Position = self.tower.EmitterAlignmentPart.Position }
 				currentTween = TweenService:Create(self.emitter, TweenInfo.new(1), goal)
 				currentTween:Play()
 				currentTween.Completed:Wait()
@@ -101,8 +98,20 @@ function TowerStateManager:UpdateState(newState)
 
 			self.finishedAttacking = false
 			TowerStateManager[randomAttack](self)
+
 			print("State changed to: " .. self.AttackState)
-			task.wait(5)
+
+			--Waits for 5 seconds and breaks while loop if state changes
+			for _ = 1, 50 do
+				if self.state ~= "attacking" then
+					break
+				end
+				task.wait(0.1)
+			end
+
+			if self.state ~= "attacking" then
+				break
+			end
 		end
 	elseif newState == "idle" then
 		TowerStateManager.Idle(self)
@@ -222,7 +231,7 @@ function TowerStateManager:Shooting()
 				Vector3.new(
 					Random.new():NextNumber(self.emitter.Position.X - 30, self.emitter.Position.X + 30),
 					Random.new():NextNumber(self.emitter.Position.Y + 5, self.emitter.Position.Y + 15),
-					self.emitter.Position.Z
+					Random.new():NextNumber(self.emitter.Position.Z - 30, self.emitter.Position.Z + 30)
 				),
 				self.emitter.Color,
 				false,
