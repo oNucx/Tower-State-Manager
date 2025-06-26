@@ -1,5 +1,5 @@
---[[My previous application got declined since I lacked the use of guard clauses and had some deprecateed wait() API's
-I have now reduced the amout of nesting by splitting the code into smaller functions and stopped using the deprecated API
+--[[My previous application got declined since I had too much nesting and used too little guar clausing. I also used some deprecated API's
+I have now reduced the amout of nesting by splitting the code into smaller functions and stopped using the outdated API
 Whether this gets approved or not, please provide feedback on how I can improve my coding abilities
 Thank you for reviewing this application!]]
 
