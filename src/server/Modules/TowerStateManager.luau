@@ -1,5 +1,7 @@
--------------Whether this gets approved or not, please provide feedback on how I can improve my coding abilities----------------
--------------Thank you for reviewing this application!-----------------
+--[[---------My previous application got declined since I lacked the use of guard clauses and had some deprecateed wait() API's
+------------I have now reduced the amout of nesting by splitting the code into smaller functions and stopped using the deprecated API
+-------------Whether this gets approved or not, please provide feedback on how I can improve my coding abilities
+-------------Thank you for reviewing this application!--]]
 
 --This is my attempt at a state manager. This module manages everything related to the different states of the "Tower"
 local TowerStateManager = {}
@@ -25,8 +27,6 @@ local AttackStates = {
 	"IceSpikes",
 }
 
-local currentTween
-
 --Creates and initializes the main tower used in this project
 function TowerStateManager.new(tower, state)
 	local self = setmetatable({}, TowerStateManager)
@@ -35,6 +35,8 @@ function TowerStateManager.new(tower, state)
 	self.finishedAttacking = true
 	self.AttackState = nil
 	self.emitter = self.tower:FindFirstChild("Emitter")
+
+	self.CurrentTween = {}
 
 	return self
 end
@@ -47,6 +49,76 @@ end
 --Returns AttackState
 function TowerStateManager:GetAttackState()
 	return self.AttackState
+end
+
+--Changes the tween of the emitter
+function TowerStateManager:ChangeTween(color, position, orientation, time)
+	local goal = {}
+	goal.Color = color
+	goal.Position = position
+	goal.Orientation = orientation
+
+	local tween = TweenService:Create(self.emitter, TweenInfo.new(time, Enum.EasingStyle.Linear), goal)
+	table.insert(self.CurrentTween, tween)
+	tween:Play()
+	tween.Completed:Wait()
+	table.clear(self.CurrentTween)
+end
+
+--Cancel's the tween
+function TowerStateManager:CancelTween()
+	for _, tween in pairs(self.CurrentTween) do
+		tween:Cancel()
+	end
+end
+
+--Sets state and AttackState to nil and waits for the attack to finish if the tower is attacking
+function TowerStateManager:RemoveLastState()
+	self.state, self.AttackState = nil
+	while not self.finishedAttacking do
+		task.wait()
+	end
+end
+
+function TowerStateManager:BeginAttackingState()
+	--The new AttackState cannot be it's previous AttackState. Also checks if the attack is finished to prevent multiple attack running at the same time
+	--Then uses TweenService to adjust it's position and then starts the random attack selected
+	while self.state == "attacking" do
+		local randomAttack = AttackStates[math.random(1, #AttackStates)]
+
+		if self.AttackState == randomAttack then
+			continue
+		end
+
+		self.AttackState = randomAttack
+
+		if not self.finishedAttacking then
+			repeat
+				task.wait()
+			until self.finishedAttacking
+		end
+
+		if self.emitter.Position ~= self.tower.EmitterAlignmentPart.Position then
+			self:ChangeTween(nil, self.tower.EmitterAlignmentPart.Position, nil, 0.5)
+		end
+
+		self.finishedAttacking = false
+		TowerStateManager[randomAttack](self)
+
+		print("State changed to: " .. self.AttackState)
+
+		--Waits for 5 seconds and breaks while loop if state changes
+		for _ = 1, 50 do
+			if self.state ~= "attacking" then
+				break
+			end
+			task.wait(0.1)
+		end
+
+		if self.state ~= "attacking" then
+			break
+		end
+	end
 end
 
 --Updates the state of the tower and works as a transition between the different states
@@ -63,10 +135,13 @@ function TowerStateManager:UpdateState(newState)
 		return
 	end
 
+	--Changes the tower's state and attackstate to nil and cancels any tweens that are playing
+	self:RemoveLastState()
+	self:CancelTween()
+
 	self.state = newState
 
-	--If state is "attacking", then selects a random AttackState. The new AttackState cannot be it's previous AttackState
-	--Then uses TweenService to adjust it's position and then starts the random attack selected
+	--If state is "attacking", then selects a random AttackState
 	if newState == "attacking" then
 		if #Players:GetChildren() == 0 then
 			warn("No players found")
@@ -74,49 +149,11 @@ function TowerStateManager:UpdateState(newState)
 			return
 		end
 
-		while self.state == "attacking" do
-			local randomAttack = AttackStates[math.random(1, #AttackStates)]
-
-			if self.AttackState == randomAttack then
-				continue
-			end
-
-			self.AttackState = randomAttack
-
-			if not self.finishedAttacking then
-				repeat
-					task.wait()
-				until self.finishedAttacking
-			end
-
-			if self.emitter.Position ~= self.tower.EmitterAlignmentPart.Position then
-				local goal = { Position = self.tower.EmitterAlignmentPart.Position }
-				currentTween = TweenService:Create(self.emitter, TweenInfo.new(1), goal)
-				currentTween:Play()
-				currentTween.Completed:Wait()
-			end
-
-			self.finishedAttacking = false
-			TowerStateManager[randomAttack](self)
-
-			print("State changed to: " .. self.AttackState)
-
-			--Waits for 5 seconds and breaks while loop if state changes
-			for _ = 1, 50 do
-				if self.state ~= "attacking" then
-					break
-				end
-				task.wait(0.1)
-			end
-
-			if self.state ~= "attacking" then
-				break
-			end
-		end
+		self:BeginAttackingState()
 	elseif newState == "idle" then
-		TowerStateManager.Idle(self)
+		self:Idle()
 	elseif newState == "inspecting" then
-		TowerStateManager.Inspecting(self)
+		self:Inspecting()
 	else
 		warn("Invalid state: " .. newState)
 		return
@@ -124,34 +161,29 @@ function TowerStateManager:UpdateState(newState)
 end
 
 --If idle, rotates 360 degrees around it's X and Y axis
-function TowerStateManager.Idle(self)
+function TowerStateManager:Idle()
 	if self.state ~= "idle" then
 		warn("Cannot set to idle when not in idle state")
 		return
 	end
 
-	self.state = "idle"
-	self.AttackState = nil
-
 	task.spawn(function()
 		while self:GetState() == "idle" do
-			local OrientationAngle = 360
-			local goal = {}
-			goal.Color = Color3.new(0, 0, 0)
-			goal.Orientation = Vector3.new(OrientationAngle, OrientationAngle, 0)
-			goal.Position = self.tower.EmitterAlignmentPart.Position
-
-			currentTween = TweenService:Create(self.emitter, TweenInfo.new(5, Enum.EasingStyle.Linear), goal)
-			currentTween:Play()
-			currentTween.Completed:Wait()
-			OrientationAngle += 360 or -360
+			local orientation = 360
+			self:ChangeTween(
+				Color3.new(0, 0, 0), --Color
+				self.tower.EmitterAlignmentPart.Position, --Position
+				Vector3.new(orientation, orientation, 0), --Orientation
+				3 --Time
+			)
+			orientation += 360
 		end
 	end)
 end
 
 --[[The inspecting state is initialized when the player is in the tower's perimetter. If the tween gets completed (player has been long enough in tower's perimetter)
 then the state changes to attack state. Otherwise, transitions to idle state.]]
-function TowerStateManager.Inspecting(self)
+function TowerStateManager:Inspecting()
 	if self.state ~= "inspecting" then
 		warn("Cannot set to inspecting when not in inspecting state")
 		return
@@ -164,17 +196,17 @@ function TowerStateManager.Inspecting(self)
 
 	task.spawn(function()
 		while self:GetState() == "inspecting" do
-			local goal = {}
-			goal.Color = Color3.new(0.505882, 0.254902, 0.792157)
-			goal.Position = self.tower.EmitterAlignmentPart.Position
+			self:ChangeTween(
+				Color3.new(0.505882, 0.254902, 0.792157),
+				self.tower.EmitterAlignmentPart.Position,
+				Vector3.new(0, 0, 0),
+				4
+			)
 
-			currentTween = TweenService:Create(self.emitter, TweenInfo.new(2, Enum.EasingStyle.Linear), goal)
-			currentTween:Play()
-			currentTween.Completed:Wait()
-			if currentTween.Completed and self:GetState() == "inspecting" then
-				TowerStateManager.UpdateState(self, "attacking")
+			if self:GetState() == "inspecting" then
+				self:UpdateState("attacking")
 			else
-				TowerStateManager.UpdateState(self, "idle")
+				self:UpdateState("idle")
 			end
 		end
 	end)
@@ -186,68 +218,67 @@ function TowerStateManager:Shooting()
 	local character
 	local HumanoidRootPart
 
-	--Changes the player target every 1.5 seconds by selecting a random player inside the game
+	--Changes it's color
 	task.spawn(function()
+		self:ChangeTween(Color3.new(0.862745, 0.87451, 0.168627), nil, nil, 1)
+	end)
+
+	--Changes the player target every 1.5 seconds by selecting a random player inside the game
+	local function TurnAndShootProjectiles()
 		while self:GetAttackState() == "Shooting" do
+			local RandomNumber = Random.new()
+
 			PlayerTarget = Players:GetChildren()[math.random(1, #Players:GetChildren())]
 			character = PlayerTarget.Character
 			if not character then
 				warn("No humanoid root part found on " .. PlayerTarget.Name)
-				wait()
+				task.wait()
 				continue
 			end
 			HumanoidRootPart = character:FindFirstChild("HumanoidRootPart")
 			if not HumanoidRootPart then
 				warn("No humanoid root part found on " .. PlayerTarget.Name)
-				wait()
+				task.wait()
 				continue
 			end
-			wait(1.5)
-		end
-	end)
 
-	--Changes it's color
-	task.spawn(function()
-		local goal = {}
-		goal.Color = Color3.new(0.862745, 0.87451, 0.168627)
+			for _ = 1, 1.5 / 0.05 do
+				if self:GetAttackState() == nil then
+					self.finishedAttacking = true
+					break
+				end
+				--adjusts it's CFrame to the character it's targetting
+				self.emitter.CFrame = CFrame.new(self.emitter.Position, HumanoidRootPart.Position)
 
-		currentTween = TweenService:Create(self.emitter, TweenInfo.new(1), goal)
-		currentTween:Play()
-		currentTween.Completed:Wait()
-	end)
+				--[[creates a projectile which has the properites: 
+				object, name, tag, size, position, color, anchored, material and shape respectively]]
+				local projectile = ProjectileHandler.new(
+					Instance.new("Part"),
+					"Projectile",
+					"Ignore",
+					Vector3.new(1, 1, 1),
+					Vector3.new(
+						RandomNumber:NextNumber(self.emitter.Position.X - 30, self.emitter.Position.X + 30),
+						RandomNumber:NextNumber(self.emitter.Position.Y + 5, self.emitter.Position.Y + 15),
+						RandomNumber:NextNumber(self.emitter.Position.Z - 30, self.emitter.Position.Z + 30)
+					),
+					self.emitter.Color,
+					false,
+					Enum.Material.Neon,
+					Enum.PartType.Block
+				)
 
-	local function TurnAndShootProjectiles()
-		while self:GetAttackState() == "Shooting" do
-			--adjusts it's CFrame to the character it's targetting
-			self.emitter.CFrame = CFrame.new(self.emitter.Position, HumanoidRootPart.Position)
+				--Using LinearVelocity to fire the part at the location of the character's HumanoidRootPart
+				projectile.object.Parent = workspace
+				projectile.object.LinearVelocity.VectorVelocity = (
+					HumanoidRootPart.Position - projectile.object.Position
+				).Unit * 60
 
-			--[[creates a projectile which has the properites: 
-			object, name, tag, size, position, color, anchored, material and shape respectively]]
-			local projectile = ProjectileHandler.new(
-				Instance.new("Part"),
-				"Projectile",
-				"Ignore",
-				Vector3.new(1, 1, 1),
-				Vector3.new(
-					Random.new():NextNumber(self.emitter.Position.X - 30, self.emitter.Position.X + 30),
-					Random.new():NextNumber(self.emitter.Position.Y + 5, self.emitter.Position.Y + 15),
-					Random.new():NextNumber(self.emitter.Position.Z - 30, self.emitter.Position.Z + 30)
-				),
-				self.emitter.Color,
-				false,
-				Enum.Material.Neon,
-				Enum.PartType.Block
-			)
+				--Destroys the projectile after 5 seconds
+				Debris:AddItem(projectile.object, 5)
 
-			--Using LinearVelocity to fire the part at the location of the character's HumanoidRootPart
-			projectile.object.Parent = workspace
-			projectile.object.LinearVelocity.VectorVelocity = (HumanoidRootPart.Position - projectile.object.Position).Unit
-				* 60
-
-			--Destroys the projectile after 5 seconds
-			Debris:AddItem(projectile.object, 5)
-
-			task.wait(0.05)
+				task.wait(0.05)
+			end
 		end
 		self.finishedAttacking = true
 		coroutine.yield()
@@ -271,19 +302,16 @@ function TowerStateManager:Eruption()
 		while self:GetAttackState() == "Eruption" do
 			local orientation = 360
 
-			local goal = {}
-			goal.Color = Color3.new(0.745098, 0.294118, 0.262745)
-			goal.Orientation = Vector3.new(0, orientation, 0)
+			self:ChangeTween(Color3.new(0.745098, 0.294118, 0.262745), nil, Vector3.new(0, orientation, 0), 1)
 
-			currentTween = TweenService:Create(self.emitter, TweenInfo.new(1.5, Enum.EasingStyle.Linear), goal)
-			currentTween:Play()
-			currentTween.Completed:Wait()
 			orientation += 360 or -360
 		end
 	end)
 
 	local function LaunchBomb()
 		while self:GetAttackState() == "Eruption" do
+			local RandomNumber = Random.new()
+
 			--Creates bomb
 			local bomb = ProjectileHandler.new(
 				Instance.new("Part"),
@@ -304,9 +332,9 @@ function TowerStateManager:Eruption()
 
 			--Sends a bomb at a random speed and angle in the 3D-space using AssemblyLinearVelocity
 			bomb.object.AssemblyLinearVelocity = Vector3.new(
-				Random.new():NextNumber(-2, 2),
-				Random.new():NextNumber(1, 2),
-				Random.new():NextNumber(-2, 2)
+				RandomNumber:NextNumber(-2, 2),
+				RandomNumber:NextNumber(1, 2),
+				RandomNumber:NextNumber(-2, 2)
 			) * bomb.object:GetMass()
 
 			--If bomb hits the surface (in this case, the baseplate which is stored inside a map folder), it spawns an instance that acts as an explosion
@@ -360,6 +388,11 @@ function TowerStateManager:IceSpikes()
 	end
 
 	local function SpawnIceSpikes()
+		if self:GetAttackState() == nil then
+			self.finishedAttacking = true
+			return
+		end
+
 		local angle = math.random(0, 360 / 10)
 		local radius = 5
 
@@ -402,18 +435,10 @@ function TowerStateManager:IceSpikes()
 	--This creates two different tween's with the goal of creating a slam animation. The emitter will rise and the slam down, which calls the SpawnIceSpikes function
 	task.spawn(function()
 		while self:GetAttackState() == "IceSpikes" do
-			local goal = {}
-			goal.Color = Color3.new(0.231373, 0.741176, 0.866667)
-			goal.Position = self.tower.EmitterTopPosition.Position
+			self:ChangeTween(Color3.new(0.231373, 0.741176, 0.866667), self.tower.EmitterTopPosition.Position, nil, 1)
 
-			currentTween = TweenService:Create(self.emitter, TweenInfo.new(1, Enum.EasingStyle.Linear), goal)
-			currentTween:Play()
-			currentTween.Completed:Wait()
+			self:ChangeTween(nil, self.tower.EmitterBottomPosition.Position, nil, 0.2)
 
-			goal.Position = self.tower.EmitterBottomPosition.Position
-			currentTween = TweenService:Create(self.emitter, TweenInfo.new(0.2, Enum.EasingStyle.Linear), goal)
-			currentTween:Play()
-			currentTween.Completed:Wait()
 			SpawnIceSpikes()
 			task.wait(0.5)
 		end
