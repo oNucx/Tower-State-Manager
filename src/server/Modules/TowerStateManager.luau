@@ -1,7 +1,7 @@
 --[[My previous application got declined since I lacked the use of guard clauses and had some deprecateed wait() API's
 I have now reduced the amout of nesting by splitting the code into smaller functions and stopped using the deprecated API
 Whether this gets approved or not, please provide feedback on how I can improve my coding abilities
-Thank you for reviewing this application!--]]
+Thank you for reviewing this application!]]
 
 --This is my attempt at a state manager. This module manages everything related to the different states of the "Tower"
 local TowerStateManager = {}
