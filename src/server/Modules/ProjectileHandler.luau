@@ -5,7 +5,7 @@ ProjectileHandler.__index = ProjectileHandler
 function ProjectileHandler.new(object, name, tag, size, position, color, anchored, material, shape)
 	local self = setmetatable({}, ProjectileHandler)
 
-	self.object = object
+	self.object = object:Clone()
 	self.object.Name = name
 	self.object.Size = size
 	self.object.Position = position
